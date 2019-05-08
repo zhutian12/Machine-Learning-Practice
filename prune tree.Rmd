@@ -1,0 +1,144 @@
+---
+title: "Case 1 Airbnb"
+author: "GroupB Huayou Tu  Tian Zhu  Jiaren Ma"
+date: "9/27/2018"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r, warning=FALSE}
+library(rpart)
+library(rpart.plot)
+library(caret)
+```
+Prepocessing: For this case, we choose 8 variables to predict whether the host is commercial or not. These variables are 'host_id', 'host_response_rate', 'neighbourhood', 'room_type', 'accommodates', 'price', 'maximum_nights' and 'availability_90'.
+For those eight variables, ???host_response_rate??? observations are recorded as percentage numbers. However, R recognizes it as a 'factor' variable. We want it to be numerical since it will make decision tree more useful and easier to read. The code we use to transfer it into numerica is: 
+Main1.df$host_response_rate <- as.numeric(sub("%","",Main1.df$host_response_rate)). 
+There are 1012 null data in 'host_response_rate' out of 5986 observations, we substitute these null data by the average of other numbers in this variable.
+There are some other variables we left unchosen for several reasons. For example, we did not use id or city because they are by nature not informative enough. We did not use date and geographical variables since they are hard to make use of for now. We also discard bedrooms, beds, weekly_rice or monthly_price simply because they may be highly correlated to accommodates and price variables and some of them have a large number of missing data.
+
+Summarize the chosen variables:
+host_id: host_id is the identical group of number marking each host of Aribnb properties. If one specific host_id appears more than once, it means the host has at least two Airbnb houses registered. Our group think that if one specific id appears many times(eg: equals or greater than 3 times), chances are high that the hosts are using commercial properties since generally, if people only rent spared rooms or properties out, they may not have that many. 
+host_response_rate: It is the percentage of inquiries that host responds to. We believe that if one host has multiple properties on Airbnb, they may not have that much time to respond as uncommercial hosts do, which may lower the responding rate. 
+neighbourhood:  It is the name of neighbourhood. We assume some regions are commercial condensed area. Thus, the name of neighbourhood may help model to identify whether the prediction target is in these commercial area.
+room_type: room_type tells us whether people rent private rooms or entire home/apartments. We assume for commercial Airbnb, owners of the house tend to rent entire home/apartment since they bought real estate for commercial use. For noncommercial Airbnb, owners tend to rent private rooms since they may also live in the apartment but only have some spare rooms, or they have a long travel and want to rent rooms out for some extra income.
+accommodates: It is the number of guests who can stay(at maximum). We assume commercial Airbnb has more accommodates since commercial Airbnbs are often larger in scale so that it can host more people.
+price: It is the nightly price. Price can tell the regions of Airbnb. In different areas, the price will be different. Price is a variable that associated with many other variables like neighbourhoods, regions, etc. In commercial regions, the price may be higher since it may be closer to 'central areas' (central area is more attractive to tourists). Also, price for commercial Airbnbs maybe higher since owner of commercial Airbnbs may charge higher price to earn the money that they invested in properties back.
+maximum_nights: It is the maximum nights for one reservation. For commercial Airbnb, owners tend to rent their properties for a longer term since they often do not live in the apartment. For private Airbnb, owners may rent for shorter time.
+Availiability_90: It is the number of nights available in the next 90 days. We assume that commercial Airbnb are likely to have more number of nights available in the next 90 days, since these houses are mainly used for renting.
+```{r, warning=FALSE}
+# Read in the main data
+Main.df <- Main.df <- read.csv("~/Downloads/Analyzing Big Data2/Case1/Airbnb Data.csv")
+str(Main.df)
+summary(Main.df$host_response_rate)
+# Choose the variables we need and drop those we do not
+Main1.df <- Main.df[ , c(2, 6, 7, 16, 17, 22, 28, 29, 30)]
+# Change the format of house_response_rate to numeric variables
+Main1.df$host_response_rate <- as.numeric(sub("%","",Main1.df$host_response_rate))
+# Replace null data in "host_response_rate" with average of the rest of observations
+meanhst <- mean(Main1.df$host_response_rate, na.rm = TRUE)
+Main1.df$host_response_rate[is.na.data.frame(Main1.df$host_response_rate)] <- meanhst
+
+set.seed(10)  
+# Seperate dataset into train set(70%) and test set(30%)
+train.index <- sample(c(1:dim(Main1.df)[1]), dim(Main1.df)[1]*0.7)  
+train.df <- Main1.df[train.index, ]
+valid.df <- Main1.df[-train.index, ]
+
+# First classification tree
+Cm.ct <- rpart(Commercial ~ ., data = train.df, method = "class", cp = 0.003, minsplit = 10)
+# Count number of leaves
+length(Cm.ct$frame$var[Cm.ct$frame$var == "<leaf>"]) 
+# print the table
+printcp(Cm.ct)
+# plot preliminary tree
+prp(Cm.ct, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10, box.col=ifelse(Cm.ct$frame$var == "<leaf>", 'gray', 'white'))
+```
+```{r, warning=FALSE}
+# Applying the first tree to training and validation set
+Cm.ct.point.pred.train <- predict(Cm.ct,train.df,type = "class")
+Cm.ct.point.pred.valid <- predict(Cm.ct,valid.df,type = "class")
+# Generate confusion matrix for training data, then with validation
+confusionMatrix(Cm.ct.point.pred.train, train.df$Commercial)
+confusionMatrix(Cm.ct.point.pred.valid, valid.df$Commercial)
+# Prune the tree
+pruned.ct <- prune(Cm.ct, cp = 0.0034247)
+# Plot the pruned tree
+prp(pruned.ct, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10, 
+	box.col=ifelse(pruned.ct$frame$var == "<leaf>", 'gray', 'white')) 
+```
+Decision Rules
+1).If number of nights available in the next 90 days < 20 days, host response rate < 97, and host response rate >=96, then Airbnb properties is Non-commercial.
+
+2).If number of nights available in the next 90 days < 20 days, host response rate < 96, and neighbourhood = Dorchester,Allston-Brighton,Charlestown,East Boston,Fenway/Kenmore,Jamaica Plain,Mattapan,Mission Hill,North End,Roxbury,South Boston, then Airbnb properties is Non-commercial.
+
+3).If number of nights available in the next 90 days < 20 days, host response rate < 96, and neighbourhood not equal to Dorchester,Allston-Brighton,Charlestown,East Boston,Fenway/Kenmore,Jamaica Plain,Mattapan,Mission Hill,North End,Roxbury,South Boston, then Airbnb properties is commercial.
+
+4).If number of nights available in the next 90 days < 20 days, host response rate > 97, and host response rate < 100, then Airbnb properties is commercial.
+
+5).If number of nights available in the next 90 days < 20 days, host response rate > 97, host response rate >= 100, and neighbourhood = Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, then Airbnb properties is Non-commercial.
+
+6).If number of nights available in the next days < 20 days, host response rate > 97, host response rate >= 100, neighbourhood not equal to Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, and maximum nights for one reservation < 85, then Airbnb properties is Non-commercial.
+
+7).If number of nights available in the next days < 20 days, host response rate > 97, host response rate >= 100, neighbourhood not equal to Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, maximum nights for one reservation > 85, and price < 44, then Airbnb properties is commercial.
+
+
+8).If number of nights available in the next days < 20 days, host response rate > 97, host response rate >= 100, neighbourhood not equal to Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, maximum nights for one reservation > 85, price bigger and equal to 100 but less than 183, then Airbnb properties is Non-commercial. 
+
+9).If number of nights available in the next days < 20 days, host response rate > 97, host response rate >= 100, neighbourhood not equal to Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, maximum nights for one reservation > 85, price bigger and equal to 100 but higher than 183, then Airbnb properties is commercial. 
+
+10).If number of nights available in the next days < 20 days, host response rate > 97, host response rate >= 100, neighbourhood not equal to Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, maximum nights for one reservation > 85, price < 100, and number of nights available in the next 90 days >= 8, then Airbnb properties is Non-commercial
+
+11).If number of nights available in the next days < 20 days, host response rate > 97, host response rate >= 100, neighbourhood not equal to Beacon Hill,Cambridge,Charlestown,Fenway/Kenmore,Financial District,Hyde Park,Jamaica Plain,
+Leather District,Mission Hill,Roslindale,South Boston,Theater District,West Roxbury, maximum nights for one reservation > 85, price < 100, and number of nights available in the next 90 days < 8, then Airbnb properties is commercial.
+
+12).If number of nights available in next days > 20 days, maximum nights for one reservation < 72, then Airbnb properties is Non-commercial.
+
+13).If number of nights available in next days > 20 days, maximum nights for one reservation > 72, and host response rate < 100, then Airbnb properties is commercial.
+
+14).If number of nights available in next days > 20 days, maximum nights for one reservation > 72, host response rate >=100, and neighbourhood not equal to Brookline,Charlestown,Downtown,Financial District,Government Center,Hyde Park,Jamaica Plain,Leather District,Mattapan,Roslindale,West Roxbury, then Airbnb properties is commercial.
+
+15).If number of nights available in next days > 20 days, maximum nights for one reservation > 72, host response rate >=100, and neighbourhood = Brookline,Charlestown,Downtown,Financial District,Government Center,Hyde Park,Jamaica Plain,Leather District,Mattapan,Roslindale,West Roxbury, and ID code for host <122e+6, then Airbnb properties is Non-commercial.
+
+16).If number of nights available in next days > 20 days, maximum nights for one reservation > 72, host response rate >=100, and neighbourhood not equal to Brookline,Charlestown,Downtown,Financial District,Government Center,Hyde Park,Jamaica Plain,Leather District,Mattapan,Roslindale,West Roxbury, and ID code for host > 122e+6, and neighbourhood is not equal to Brookline,Charlestown,Government Center,Hyde Park,Leather District,West Roxbury,then Airbnb properties is commercial.
+
+17).If number of nights available in next days > 20 days, maximum nights for one reservation > 72, host response rate >=100, and neighbourhood not equal to Brookline,Charlestown,Downtown,Financial District,Government Center,Hyde Park,Jamaica Plain,Leather District,Mattapan,Roslindale,West Roxbury, and ID code for host > 122e+6, and neighbourhood is not equal to Brookline,Charlestown,Government Center,Hyde Park,Leather District,West Roxbury,then Airbnb properties is Non-commercial.
+```{r, warning=FALSE}
+# Count number of leaves
+length(pruned.ct$frame$var[Cm.ct$frame$var == "<leaf>"]) 
+# Applying the pruned tree to training and validation set
+Cm.ct.point.pred.train1 <- predict(pruned.ct,train.df,type = "class")
+Cm.ct.point.pred.valid1 <- predict(pruned.ct,valid.df,type = "class")
+# Generate confusion matrix for training data, then with validation
+confusionMatrix(Cm.ct.point.pred.train1, train.df$Commercial)
+confusionMatrix(Cm.ct.point.pred.valid1, valid.df$Commercial)
+```
+Cofusion Matrix Comments: This is the the training sets confusion matrix. There are 1699 observations from prediction are True Positive. 1706 observations from prediction are True Negative. 447 observations are False Negative and 338 observations are False Positive. The accuracy of the training sample prediction test is 0.83126 which means that by using this prediction, we have 81.26% probability to get correct result. The sensitivity is equal to 0.7917 which is equal to TP/(TP+FN). It is the power of test which is the ability to predict the right result. The specificity is equal to 0.8346 which is equal to TN/(TN+FP). It is the ability to identify the true negative. For validation date set, there are 682 observations from prediction are True positive. 748 observations from prediction are True negative. 222 observations are False Negative and 144 observations are False Positive. The accuracy of the training sample prediction test is 0.7962 which means that by using this prediction, we have 79.62% probability to get correct results. The sensitivity is equal to 0.7544 which is equal to TP/(TP+FN). It is the power of test. It is the ability to predict the right result. The specificity is equal to 0.8386 which is equal to TN/(TN+FP). It is the ability to identify the true negative.
+```{r}
+# Read in the new data
+New.df <- read.csv("~/Downloads/Analyzing Big Data2/Case1/Boston Listings 2018 Case 1 NEW.csv")
+# Changing the format of "house_response_rate"
+New.df$host_response_rate <- as.numeric(sub("%","",New.df$host_response_rate))
+# Replace null data in "host_response_rate" with average of the rest of observations
+meanhst1 <- mean(New.df$host_response_rate, na.rm = TRUE)
+New.df$host_response_rate[is.na.data.frame(New.df$host_response_rate)] <- meanhst
+# Predict the target variable with pruned tree
+prediction <- predict(pruned.ct, New.df, type = "class")
+# Print out the result and generate the new variable
+print(prediction)
+summary(prediction)
+New.df$Commerical <- prediction
+```
+Reporting of classification for the new data set:
+Judging from the result, the listing # 1-5, #9-12, #15-18, #23, #28, #31, #34, #37-39, #43-44 and #46 are classified as commercial and the rest are classified as non-commercial.
+While analyzing the data,. we used the average host_response_rate without NAs to fill in the empty cells. The advantage of using this method is that we could prevent the situation of getting 'NA' with the unknown data, but the disadvantage of this method is that the conclusion may have significant bias.
+Potential Model Improvements.
+There are also some variables that we wish to be useful or effectively. For example, the geographic and time data. If there is a method that we could combine the location of properties to the general housing prices, or get more information on the trend of commercial houses growth, we could make better use of those data.
